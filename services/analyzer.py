@@ -4,7 +4,7 @@ import streamlit as st
 import hashlib
 import json
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+openai.api_key = os.environ["OPENAI_API_KEY"]
 
 def _make_cache_key(changes_by_label, news_summaries, start_date, end_date):
     """キャッシュキーを安定化させるためのハッシュ関数"""

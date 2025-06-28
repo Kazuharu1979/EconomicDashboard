@@ -3,8 +3,6 @@ import requests
 from datetime import datetime, timedelta
 import streamlit as st  # 追加：キャッシュ用
 
-load_dotenv()
-
 API_KEY = os.environ["MARKETAUX_API_KEY"]
 BASE_URL = "https://api.marketaux.com/v1/news/all"
 

@@ -1,6 +1,5 @@
 import os
 import requests
-from dotenv import load_dotenv
 from datetime import datetime, timedelta
 import streamlit as st  # 追加：キャッシュ用
 

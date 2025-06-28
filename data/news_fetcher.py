@@ -6,7 +6,7 @@ import streamlit as st  # 追加：キャッシュ用
 
 load_dotenv()
 
-API_KEY = os.getenv("MARKETAUX_API_KEY")
+API_KEY = os.environ["MARKETAUX_API_KEY"]
 BASE_URL = "https://api.marketaux.com/v1/news/all"
 
 # 世界経済に影響を与える英語キーワード一覧

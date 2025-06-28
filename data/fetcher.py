@@ -3,31 +3,39 @@ import pandas as pd
 import streamlit as st
 from datetime import datetime
 import re
+import time
 
-def fetch_data(ticker, start_date, end_date):
-    df = yf.download(ticker, start=start_date, end=end_date)
-
-    # MultiIndex の場合はフラット化
-    if isinstance(df.columns, pd.MultiIndex):
+@st.cache_data(ttl=3600)  # 1時間キャッシュ
+def fetch_data(ticker, start_date, end_date, retries=3, delay=2):
+    for attempt in range(retries):
         try:
-            df = df.xs(ticker, level=1, axis=1)
-        except KeyError:
-            st.warning(f"{ticker} のデータが取得できませんでした。")
-            return pd.DataFrame()
+            df = yf.download(ticker, start=start_date, end=end_date, progress=False)
 
-    # 必要なカラムがあるか確認
-    if 'Close' not in df.columns:
-        st.warning(f"{ticker} の終値データが存在しません。")
-        return pd.DataFrame()
+            # MultiIndex の場合はフラット化
+            if isinstance(df.columns, pd.MultiIndex):
+                try:
+                    df = df.xs(ticker, level=1, axis=1)
+                except KeyError:
+                    raise ValueError(f"{ticker} のデータが見つかりません。")
 
-    # 終値のみ抽出し、インデックス名を設定
-    df = df[['Close']].dropna()
-    df.index = pd.to_datetime(df.index)
-    df.index.name = "date"
-    return df
-    
-# ✅ 修正：datetime.datetime → datetime
+            if 'Close' not in df.columns:
+                raise ValueError(f"{ticker} の終値データが存在しません。")
+
+            df = df[['Close']].dropna()
+            df.index = pd.to_datetime(df.index)
+            df.index.name = "date"
+            return df
+
+        except Exception as e:
+            if attempt < retries - 1:
+                time.sleep(delay)
+            else:
+                st.warning(f"{ticker} のデータ取得に繰り返し失敗しました。エラー内容: {e}")
+                return pd.DataFrame()
+
 def convert_wareki_to_datetime(wareki_str):
+    if not isinstance(wareki_str, str):
+        return None
     match = re.match(r"([MTSHRE])(\d+)\.(\d+)\.(\d+)", wareki_str)
     if not match:
         return None
@@ -40,36 +48,50 @@ def convert_wareki_to_datetime(wareki_str):
         "S": 1925,  # 昭和
         "H": 1988,  # 平成
         "R": 2018,  # 令和
-        "E": 2018,  # Excel誤変換対策
+        "E": 2018,  # Excel変換用
     }
     base = era_offset.get(era)
     if base is None:
         return None
     return datetime(base + year, month, day)
 
-# 財務省CSVから指定年限の利回りを取得
+@st.cache_data(ttl=86400)  # 1日キャッシュ
+def load_mof_raw_data():
+    url_all = "https://www.mof.go.jp/jgbs/reference/interest_rate/data/jgbcm_all.csv"
+    url_current = "https://www.mof.go.jp/jgbs/reference/interest_rate/jgbcm.csv"
+
+    df_all = pd.read_csv(url_all, encoding="shift_jis", header=1)
+    df_current = pd.read_csv(url_current, encoding="shift_jis", header=1)
+
+    df_all["date"] = df_all["基準日"].apply(convert_wareki_to_datetime)
+    df_current["date"] = df_current["基準日"].apply(convert_wareki_to_datetime)
+
+    return df_all, df_current
+
+@st.cache_data(ttl=86400)  # 1日キャッシュ
 def fetch_japan_bond_yield_mof(start_date, end_date, term="10年"):
     try:
-        url = "https://www.mof.go.jp/jgbs/reference/interest_rate/data/jgbcm_all.csv"
-        df = pd.read_csv(url, encoding="shift_jis", header=1)
+        df_all, df_current = load_mof_raw_data()
 
-        df["date"] = df["基準日"].apply(convert_wareki_to_datetime)
+        common_cols = [col for col in df_all.columns if col in df_current.columns]
+        df_all = df_all[common_cols]
+        df_current = df_current[common_cols]
+
+        df = pd.concat([df_all, df_current], ignore_index=True)
         df = df.dropna(subset=["date"])
-        df = df[(df["date"] >= start_date) & (df["date"] <= end_date)]
+        df = df.sort_values("date").drop_duplicates("date")
 
         if term not in df.columns:
             return pd.DataFrame()
 
         df = df[["date", term]].dropna()
-        df[term] = pd.to_numeric(df[term], errors="coerce")  # ← ★ ここで数値化
-        df = df.dropna(subset=[term])
-
-        df = df.set_index("date")
+        df[term] = pd.to_numeric(df[term].replace("-", pd.NA), errors="coerce")
+        df = df.dropna()
+        df = df.set_index("date").astype(float)
         df.columns = [f"JPY{term}"]
-        df = df.sort_index()
-        return df
+
+        return df.loc[start_date:end_date].sort_index()
 
     except Exception as e:
-        print(f"データ取得エラー: {e}")
+        st.error(f"MOFデータ取得エラー: {e}")
         return pd.DataFrame()
-

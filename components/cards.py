@@ -33,7 +33,7 @@ def render_metric_card(label, value, change, change_text, last_date):
         border: 1px solid #e6e6e6;
     '>
         <div style='font-weight: 600; font-size: 1rem;'>{label}</div>
-        <div style='font-size: 1.4rem; font-weight: 700; color: {value_color};'>{value}</div>
+        <div style='font-size: 1.4rem; font-weight: 700; color: {value_color};'>{float(value):,.2f}</div>
         <div style='font-size: 0.9rem; color: #5c5c5c; margin-top: 0.3rem;'>{change_text}</div>
         <div style='font-size: 0.8rem; color: #999; margin-top: 0.3rem;'>更新日: {last_date}</div>
         <div style='margin-top: 0.4rem;'>

@@ -7,7 +7,6 @@ from data.news_fetcher import fetch_market_news
 from components.selector import select_date_range
 from components.cards import render_metric_card
 from services.analyzer import generate_analysis
-import pytz
 
 st.set_page_config(page_title="世界経済ダッシュボード", layout="wide")
 st.title("🌐 世界経済ダッシュボード")
@@ -15,10 +14,13 @@ st.title("🌐 世界経済ダッシュボード")
 # 日付選択
 range_option, start_date, end_date = select_date_range()
 
-# 各指標の変化率格納用
 label_changes = {}
+period_offsets = OrderedDict({
+    "5d": timedelta(days=7),
+    "1mo": timedelta(days=30),
+    "3mo": timedelta(days=90)
+})
 
-# 各カテゴリごとに指標を描画
 for category in category_order:
     items = indicators_by_category.get(category, {})
     if not items:
@@ -31,9 +33,9 @@ for category in category_order:
     for label, info in items.items():
         try:
             if info.get("is_mof"):
-                df = fetch_japan_bond_yield_mof(start_date - timedelta(days=7), end_date, term=info.get("term", "10年"))
+                df = fetch_japan_bond_yield_mof(start_date - timedelta(days=90), end_date, term=info.get("term", "10年"))
             else:
-                df = fetch_data(info["ticker"], start_date - timedelta(days=7), end_date)
+                df = fetch_data(info["ticker"], start_date - timedelta(days=90), end_date)
 
             if df.empty:
                 st.warning(f"{label} のデータが空です。")
@@ -55,25 +57,37 @@ for category in category_order:
                 prev_value = df_period.iloc[0, 0]
                 end_value = df_period.iloc[-1, 0]
 
-            if info.get("is_mof"):
-                change = end_value - prev_value
-                change_text = f"{change:+.2f}%"
-            else:
-                change = ((end_value - prev_value) / prev_value) * 100
-                change_text = f"{change:+.2f}%（変化率）"
+            history_changes = {}
+            for key, offset in period_offsets.items():
+                hist_start = end_date - offset
+                df_hist = df[(df.index >= hist_start) & (df.index <= end_date)]
+                if len(df_hist) >= 2:
+                    v0 = df_hist.iloc[0, 0]
+                    v1 = df_hist.iloc[-1, 0]
+                    if category == "国債":
+                        history_changes[key] = v1 - v0
+                    else:
+                        history_changes[key] = ((v1 - v0) / v0) * 100
 
-            label_changes[label] = change
+            if category == "国債":
+                range_change = end_value - prev_value
+                change_text = f"{range_change:+.2f}%"
+            else:
+                range_change = ((end_value - prev_value) / prev_value) * 100
+                change_text = f"{range_change:+.2f}%（変化率）"
+
+            history_changes["range"] = range_change
+            label_changes[label] = history_changes
 
             last_date = df_in_range.index[-1].tz_localize("UTC").tz_convert("Asia/Tokyo").strftime("%Y-%m-%d")
 
             with cols[i % 4]:
-                render_metric_card(label, f"{end_value:.2f}", change, change_text, last_date)
+                render_metric_card(label, f"{end_value:.2f}", range_change, change_text, last_date)
             i += 1
 
         except Exception as e:
             st.warning(f"{label} の取得中にエラーが発生しました: {e}")
 
-# ニュース取得（期間調整）
 if range_option == "前日比":
     news_start = datetime.combine(end_date.date() - timedelta(days=1), datetime.min.time())
     news_end = datetime.combine(end_date.date() + timedelta(days=1), datetime.min.time())
@@ -83,7 +97,6 @@ else:
 
 news_summaries = fetch_market_news(news_start, news_end)
 
-# ChatGPTによる要約分析
 st.markdown("---")
 st.markdown("### 🤖 ChatGPTによる市場分析コメント")
 st.info("個別指標の変化率と最近のニュースをもとに、世界経済の動向を自動で分析します。")
@@ -91,7 +104,6 @@ st.info("個別指標の変化率と最近のニュースをもとに、世界�
 comment = generate_analysis(label_changes, news_summaries, start_date, end_date)
 st.markdown(comment)
 
-# ニューステーブル表示
 def parse_summary(summary):
     try:
         title_line, description = summary.split("\n", 1)

@@ -13,6 +13,7 @@ def select_date_range(today=None):
         "3か月": relativedelta(months=3),
         "1年": relativedelta(years=1),
         "5年": relativedelta(years=5),
+        "10年": relativedelta(years=10),
         "カスタム": None
     }
 

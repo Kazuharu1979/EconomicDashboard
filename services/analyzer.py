@@ -17,10 +17,9 @@ def _make_cache_key(changes_by_label, news_summaries, start_date, end_date):
     key_str = json.dumps(key_data, sort_keys=True, ensure_ascii=False)
     return hashlib.md5(key_str.encode("utf-8")).hexdigest()
 
-@st.cache_data(ttl=1800, show_spinner="ChatGPTで分析中...")  # 30分キャッシュ
+@st.cache_data(ttl=1800, show_spinner="ChatGPTで分析中...")
 def generate_analysis(changes_by_label, news_summaries, start_date, end_date):
     try:
-        # キャッシュキー生成（streamlitが自動でdict/listをハッシュしないため）
         cache_key = _make_cache_key(changes_by_label, news_summaries, start_date, end_date)
 
         summary_prompt = f"""
@@ -28,11 +27,17 @@ def generate_analysis(changes_by_label, news_summaries, start_date, end_date):
 分析対象期間は {start_date.date()} から {end_date.date()} です。
 この情報に加えて、期間中に報道された重要ニュースやWebの情報も参考にして、現在の世界経済の動向と注目ポイントを日本語で簡潔に分析してください。
 特に、指標の動きと関連しそうなニュースを取り上げてください。
+出力には「分析対象期間」という表現は使わず、「前日比」「1カ月」「約3カ月」など、一般的な表現を用いてください。
+語尾は、ですます調に統一してください。
 
 【指標の変化率】
 """
-        for label, change in changes_by_label.items():
-            summary_prompt += f"- {label}: {change:+.2f}%\n"
+        for label, changes in changes_by_label.items():
+            summary_prompt += f"- {label}:"
+            summary_prompt += f"  - 直近5日: {changes.get('5d', 0):+.2f}%\n"
+            summary_prompt += f"  - 過去1か月: {changes.get('1mo', 0):+.2f}%\n"
+            summary_prompt += f"  - 過去3か月: {changes.get('3mo', 0):+.2f}%\n"
+            summary_prompt += f"  - 分析対象期間: {changes.get('range', 0):+.2f}%\n"
 
         if news_summaries:
             summary_prompt += "\n【期間中の主な経済ニュース】\n"
@@ -40,7 +45,6 @@ def generate_analysis(changes_by_label, news_summaries, start_date, end_date):
 
         summary_prompt += "\n\n注目すべきポイントを3つ程度、箇条書きで示してください。"
 
-        # ChatGPT呼び出し
         response = openai.chat.completions.create(
             model="gpt-4",
             messages=[

@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
+from collections import OrderedDict
 from config.indicators import indicators_by_category, category_order
 from data.fetcher import fetch_data, fetch_japan_bond_yield_mof
 from data.news_fetcher import fetch_market_news
